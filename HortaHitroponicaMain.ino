@@ -1,33 +1,33 @@
 #include <WiFi.h>//biblioteca para iniciar o esp-webServer
-#include <HCAM2315.h>//biblioteca do leitor de umidade e temperatura do ar
+#include <Wire.h>
+#include <Adafruit_AM2315.h>//biblioteca do leitor de umidade e temperatura do ar
 #include "SSD1306.h"//biblioteca do Oled
 
-#define I2CADD 0x5C//serve apenas para a leitura do ar dar certo
+Adafruit_AM2315 am2315;
 
 //pinos usados no esp
-#define pin_relay 5
-#define pin_solo 36
-#define scl_oled 22
-#define sda_oled 21
+#define pin_relay 13//5
+#define pin_solo 15//36
+#define scl 5//22
+#define sda 18//21
 
 const char* ssid  = "Horta IOT";//nome da rede do esp
 const char* password = "Iotehmtbom";//senha
 
-int temperatura,umidade,umidade_solo_porcentagem,erro;
+float temperatura,umidade,umidade_solo_porcentagem,umidade_solo_minima = 20,temp_maxima = 30,humidade_minima = 60;
+int erro;
 /*significados de cada erro
 erro = 1 = temperatura muito alta para a planta
 erro = 2 = umidade do ar muito baixa para a planta
 erro = 3 = umidade do solo mt baixa
 erro = 4 = erro na maquina*/
 
-SSD1306 display(0x3c, sda_oled, scl_oled);
-
-HCAM2315 HCAM2315(I2CADD);
+SSD1306 display(0x3c, sda, scl);
 
 WiFiServer server(80);
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(9600);
   pinMode(pin_solo,INPUT);
   pinMode(pin_relay, OUTPUT);
   WiFi.softAP(ssid, password);
@@ -36,48 +36,42 @@ void setup() {
   //display.setFont(ArialMT_Plain_16);//define a fonte e o tamanho
   display.clear();//limpa a tela
   server.begin();//inicia o server do esp
-  HCAM2315.init();//inicia o objeto p leitura do ar
+  if (! am2315.begin()) {
+     Serial.println("Sensor not found, check wiring & pullups!");
+     while (1);
+  }
+  //am2315.begin();
 }
 
-void medeUmidadeDoSoloSalvaEmPorcentagem (int *solo) {
+void medeUmidadeDoSoloSalvaEmPorcentagem () {
   //funcao que faz a medicao da umidade do solo retorna em porcentagem 
-  *solo = map (analogRead (pino_sensor_solo),4095,1000,0,100);
+  umidade_solo_porcentagem = map (analogRead (pin_solo),4095,1000,0,100);
   //funcao map tranforma em um valor de 0-100
 }
 
-int medeTemperaturaEUmidadeDoAr (int *temperatura,int *umidade) {
-  // funcao que faz a leitura da umidade e temperatura do ar
-  if(HCAM2315.CheckCRC()){//se a medicao der certo
-    *temperatura = HCAM2315.Temp();//salva a temperatura 
-    *umidade =  HCAM2315.Hum();//salva a umidade do ar
-    return 1;
-  }else {
-    return 0;//medicao nao deu certo
-  }
-}
 //funcao que retorna o codigo do erro caso encontrado
 //se nao tiver erros return 0
-int verificaErros (int *temp,int *um_ar,int *um_solo) {
-  medeUmidadeDoSoloSalvaEmPorcentagem(um_solo);
-  if (*um_solo <= 20) {
-    return 3;
+void verificaErros () {
+  medeUmidadeDoSoloSalvaEmPorcentagem();
+  if (umidade_solo_porcentagem <= umidade_solo_minima) {//valor de humidade do solo que a planta acha ruim
+    erro = 3;
   }
-  if (medeTemperaturaEUmidadeDoAr(temp,um_ar)) {
-    if (*temp > valor de temperatura que a planta acha ruim) {
-       return 1;
+  if (am2315.readTemperatureAndHumidity(&temperatura,&umidade)) {
+    if (temperatura > temp_maxima) {//valor de temperatura que a planta acha ruim
+       erro = 1;
     }
-    if (*um_ar < valor de umidade que a planta acha ruim) {
-      return 2;
+    if (umidade < humidade_minima) {//valor de umidade que a planta acha ruim
+      erro = 2;
     }
   }else {
-    return 4;
+    erro = 4;
   }
-
-  return 0;
+  erro = 0;
 }
 
 void printandoErroNoOled(int erro) {//faz exatamente oq o nome fala =)
   if (erro == 1) {
+    display.clear();
     display.setFont(ArialMT_Plain_16);
     display.drawRect(0, 0, 128, 64);
     display.drawString(0,0,"Temperatura alta\n");
@@ -87,6 +81,7 @@ void printandoErroNoOled(int erro) {//faz exatamente oq o nome fala =)
     display.display();//faz todos os comandos aparecerem no oled
   }
   if (erro == 2) {
+    display.clear();
     display.setFont(ArialMT_Plain_16);
     display.drawRect(0, 0, 128, 64);
     display.drawString(0,0,"Umid. ar baixa\n");
@@ -96,6 +91,7 @@ void printandoErroNoOled(int erro) {//faz exatamente oq o nome fala =)
     display.display();
   }
   if (erro == 3) {
+    display.clear();
     display.setFont(ArialMT_Plain_16);
     display.drawRect(0, 0, 128, 64);
     //desenha um retangulo nas bordas da tela ja que a resolucao eh 128x64
@@ -106,32 +102,40 @@ void printandoErroNoOled(int erro) {//faz exatamente oq o nome fala =)
     display.display();
   }
   if (erro == 4) {
+    display.clear();
     display.setFont(ArialMT_Plain_16);
     display.drawRect(0, 0, 128, 64);
     display.drawString(0,0,"Erro no sistema\n");
     display.drawString(0,16,"Alguma coisa esta\n");
     display.drawString(0,32,"Muito errada ae\n");
-    display.drawString(0,48,";-;\n");
+    display.drawString(0,48,"(;-;)\n");
     display.display();
   }
   if (!erro) {
+    display.clear();
     display.setFont(ArialMT_Plain_24);
     display.drawRect(0, 0, 128, 64);
     display.drawString(0,16,"Horta saudavel\n");
-    //deixar esse print main bonito, de preferencia fazer um desenho sla!
+    //deixar esse print mais bonito, de preferencia fazer um desenho sla!
   }
 }  
 
 void loop() {
-  erro = verificaErros(&temperatura,&umidade,&umidade_solo_porcentagem);
+  /*verificaErros();
   //colocar aki uma funcao q vai mandar esses 3 dados para o app do celular caso o usuario se conecte
   if (erro == 3) {
     digitalWrite(pin_relay, HIGH);
-  }
-  if (umidade_solo_porcentagem > valor maximo da umidade) {
+  }else {
     digitalWrite(pin_relay, LOW);
   }
   printandoErroNoOled(erro);
-  delay(1000);
-  
+  delay(1000);*/
+  if (am2315.readTemperatureAndHumidity(&temperatura,&umidade)) {
+    Serial.print("Temp : ");
+    Serial.println (temperatura);
+    Serial.print("Hum : ");
+    Serial.println (umidade);
+  }else {
+    Serial.println("Nao foi possivel ler");
+  }
 }
