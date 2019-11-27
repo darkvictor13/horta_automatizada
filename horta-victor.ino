@@ -39,15 +39,17 @@ void setup() {
   //display.setFont(ArialMT_Plain_16);//define a fonte e o tamanho
   //display.clear();//limpa a tela
   server.begin();//inicia o server do esp
-  delay(1000);
+  //delay(1000);
   //if (! am2315.begin()) {
   //   Serial.println("Sensor not found, check wiring & pullups!");
   //   while (1);
   //}
+  delay(2000);
   while (! am2315.begin()) {
     Serial.println("Sensor not found, check wiring & pullups!");
     delay(10);
   }
+  Serial.println("Sensor achado!");
   //am2315.begin();
 }
 
@@ -65,6 +67,8 @@ void medeUmidadeDoSoloSalvaEmPorcentagem () {
 void leitura () {
   medeUmidadeDoSoloSalvaEmPorcentagem();
   while (! am2315.readTemperatureAndHumidity(&aux_temperatura, &aux_umidade)) {
+    Serial.print("Hum %: "); Serial.println(aux_umidade);
+    Serial.print("temperatura: "); Serial.println(aux_temperatura);
     delay(100);
   }
   umidade = aux_umidade;
@@ -144,9 +148,9 @@ void realizaAcoes () {
 
 void loop() {
   leitura();
-  Serial.print("Temp *C: "); Serial.println(temperatura);
-  Serial.print("Hum %: "); Serial.println(umidade);
-  Serial.print("Hum solo: "); Serial.println(umidade_solo_porcentagem);
+  //Serial.print("Temp *C: "); Serial.println(temperatura);
+  //Serial.print("Hum %: "); Serial.println(umidade);
+  //Serial.print("Hum solo: "); Serial.println(umidade_solo_porcentagem);
   verificaErros();
   Serial.print("Erro = "); Serial.println(erro);
   realizaAcoes();
